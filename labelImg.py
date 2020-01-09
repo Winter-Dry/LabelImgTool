@@ -1396,7 +1396,7 @@ class MainWindow(QMainWindow, WindowMixin):
         settings = self.app_settings
         # If it loads images from dir, don't load it at the begining
         if self.dirname is None:
-            settings[SETTING_FILENAME] = self.filePath if self.filePath else ''
+            settings[SETTING_FILENAME] = self.filePath if hasattr(self, 'filePath') else ''
         else:
             settings[SETTING_FILENAME] = ''
 
