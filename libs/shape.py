@@ -197,6 +197,19 @@ class Shape(object):
             shape.fill_color = self.fill_color
         return shape
 
+    def divide(self, points):
+        s1 = self.copy()
+        s2 = self.copy()
+        start = self.points.find(points[0])
+        end = self.points.find(points[-1])
+        if start < end:
+            s1.points = points + self.points[end-1:start:-1]
+            s2.points = points + self.points[end+1:] + self.points[:start]
+        else:
+            s1.points = points + self.points[end+1:start]
+            s2.points = points + self.points[end-1::-1] + self.points[:start:-1]
+        return s1, s2
+
     def __len__(self):
         return len(self.points)
 
