@@ -17,7 +17,9 @@ CURSOR_GRAB = Qt.OpenHandCursor
 class Canvas(QWidget):
     zoomRequest = pyqtSignal(int)
     scrollRequest = pyqtSignal(int, int)
-    newShape = pyqtSignal()
+    newShape = pyqtSignal(str)
+    createPolygon = pyqtSignal()
+    remove = pyqtSignal()
     selectionChanged = pyqtSignal(bool)
     shapeMoved = pyqtSignal()
     drawingPolygon = pyqtSignal(bool)
@@ -53,6 +55,10 @@ class Canvas(QWidget):
         self.visible = {}
         self._hideBackround = False
         self.hideBackround = False
+        self.nearVertex = None
+        self.nearShape = None
+        self.ctrl_pressed = False
+        self.rmShape = None
         self.hShape = None
         self.hVertex = None
         self._painter = QPainter(self)
@@ -139,16 +145,32 @@ class Canvas(QWidget):
                     # Don't allow the user to draw outside the pixmap.
                     # Project the point to the pixmap's edges.
                     pos = self.intersectionPoint(self.current[-1], pos)
-                elif len(self.current) > 1 and self.closeEnough(pos, self.current[0]):
-                    # Attract line to starting point and colorise to alert the
-                    # user:
-                    pos = self.current[0]
-                    color = self.current.line_color
-                    self.overrideCursor(CURSOR_POINT)
-                    self.current.highlightVertex(0, Shape.NEAR_VERTEX)
+                elif len(self.current) > 1 or self.nearShape is not None:
+                    _pos = None
+                    if self.nearShape:
+                        for shape in self.nearShape:
+                            if _pos is not None:
+                                break
+                            for i in xrange(len(shape.points)):
+                                point = shape.points[i]
+                                if point != self.current[0] and self.closeEnough(pos, point):
+                                    _pos = point
+                                    shape.highlightVertex(i, Shape.NEAR_VERTEX)
+                                    color = shape.line_color
+                                    break
+                    elif self.closeEnough(pos, self.current[0]):
+                        _pos = self.current[0]
+                        color = self.current.line_color
+                        self.current.highlightVertex(0, Shape.NEAR_VERTEX)
+                    if _pos:
+                        pos = _pos
+                        self.overrideCursor(CURSOR_POINT)
                 self.line[1] = pos
                 self.line.line_color = color
                 self.repaint()
+                if self.nearShape:
+                    for shape in self.nearShape:
+                        shape.highlightClear()
                 self.current.highlightClear()
             return
 
@@ -181,11 +203,26 @@ class Canvas(QWidget):
         # - Highlight vertex
         # Update shape/vertex fill and tooltip value accordingly.
         self.setToolTip("Image")
-        for shape in reversed([s for s in self.shapes if self.isVisible(s)]):
+        s_tmp = [s for s in self.shapes if self.isVisible(s)]
+        self.nearVertex = None
+        for shape in reversed(s_tmp):
+            ret = shape.nearestVertex(pos, self.epsilon)
+            if ret is not None:
+                index, point = ret
+                if self.nearVertex is None:
+                    self.nearVertex = [[], None, None]
+                if shape not in self.nearVertex[0]:
+                    self.nearVertex[0] += [shape]
+                self.nearVertex[1] = point
+        for shape in reversed(s_tmp):
             # Look for a nearby vertex to highlight. If that fails,
             # check if we happen to be inside a shape.
-            index = shape.nearestVertex(pos, self.epsilon)
-            if index is not None:
+            ret = shape.nearestVertex(pos, self.epsilon)
+            if ret is not None:
+                index, point = ret
+                # shape = self.nearVertex[0][0]
+                # point = self.nearVertex[1]
+                # index = self.nearVertex[2]
                 if self.selectedVertex():
                     self.hShape.highlightClear()
                 self.hVertex, self.hShape = index, shape
@@ -206,21 +243,43 @@ class Canvas(QWidget):
                 self.overrideCursor(CURSOR_GRAB)
                 self.update()
                 break
-        else:  # Nothing found, clear highlights, reset state.
-            if self.hShape:
-                self.hShape.highlightClear()
-                self.update()
-            self.hVertex, self.hShape = None, None
+            else:  # Nothing found, clear highlights, reset state.
+                if self.hShape:
+                    self.hShape.highlightClear()
+                    self.update()
+                self.hVertex, self.hShape = None, None
 
     def mousePressEvent(self, ev):
         pos = self.transformPos(ev.posF())
         if ev.button() == Qt.LeftButton:
             if self.drawing():
                 if self.shape_type == self.POLYGON_SHAPE and self.current:
-                    self.current.addPoint(self.line[1])
+                    _pos = self.line[1]
+                    self.current.addPoint(_pos)
                     self.line[0] = self.current[-1]
-                    if self.current.isClosed():
-                        self.finalise()
+                    if self.nearShape:
+                        shape = None
+                        for s in self.nearShape:
+                            if _pos in s.points:
+                                shape = s
+                                break
+                        if shape is not None:
+                            s1, s2 = shape.divide(self.current.points)
+                            text = str(shape.label)
+                            self.shapes.remove(shape)
+                            self.rmShape = shape
+                            self.remove.emit()
+                            self.shapes.append(s1)
+                            self.newShape.emit(text)
+                            self.shapes.append(s2)
+                            self.newShape.emit(text)
+                            self.nearShape = None
+                            self.current = None
+                            self.setHiding(False)
+                            self.update()
+                    else:
+                        if self.current.isClosed():
+                            self.finalise()
                 elif self.shape_type == self.RECT_SHAPE and self.current and self.current.reachMaxPoints() is False:
                     initPos = self.current[0]
                     minX = initPos.x()
@@ -242,17 +301,37 @@ class Canvas(QWidget):
                     self.setHiding()
                     self.drawingPolygon.emit(True)
                     self.update()
+            elif self.nearVertex and self.ctrl_pressed:
+                self.nearShape, _pos, _ = self.nearVertex
+                self.current = Shape(shape_type=self.shape_type)
+                self.current.addPoint(_pos)
+                self.line.points = [_pos, _pos]
+                self.setHiding()
+                self.createPolygon.emit()
+                self.drawingPolygon.emit(True)
+                self.update()
             else:
                 self.selectShapePoint(pos)
                 self.prevPoint = pos
                 self.repaint()
-        elif ev.button() == Qt.RightButton and self.editing():
-            self.selectShapePoint(pos)
-            self.prevPoint = pos
-            self.repaint()
+        elif ev.button() == Qt.RightButton:
+            if self.editing():
+                self.selectShapePoint(pos)
+                self.prevPoint = pos
+                self.repaint()
 
     def mouseReleaseEvent(self, ev):
         if ev.button() == Qt.RightButton:
+            # if self.nearVertex:
+            #     self.nearShape, _pos = self.nearVertex
+            #     self.current = Shape(shape_type=self.shape_type)
+            #     self.current.addPoint(_pos)
+            #     self.line.points = [_pos, _pos]
+            #     self.setHiding()
+            #     self.createPolygon.emit()
+            #     self.drawingPolygon.emit(True)
+            #     self.update()
+            #     return
             menu = self.menus[bool(self.selectedShapeCopy)]
             self.restoreCursor()
             if not menu.exec_(self.mapToGlobal(ev.pos()))\
@@ -504,7 +583,7 @@ class Canvas(QWidget):
         self.shapes.append(self.current)
         self.current = None
         self.setHiding(False)
-        self.newShape.emit()
+        self.newShape.emit('')
         self.update()
 
     def closeEnough(self, p1, p2):
@@ -591,8 +670,16 @@ class Canvas(QWidget):
             self.current = None
             self.drawingPolygon.emit(False)
             self.update()
+        elif key == Qt.Key_Control:
+            self.ctrl_pressed = True
         elif key == Qt.Key_Return and self.canCloseShape():
             self.finalise()
+        return super(Canvas, self).keyPressEvent(ev)
+
+    def keyReleaseEvent(self, QkeyEvent):
+        if QkeyEvent.key() == Qt.Key_Control:
+            self.ctrl_pressed = False
+        return super(Canvas, self).keyReleaseEvent(QkeyEvent)
 
     def setLastLabel(self, text):
         assert text
@@ -613,6 +700,8 @@ class Canvas(QWidget):
         self.line.points = [self.current[-1], self.current[0]]
         self.drawingPolygon.emit(True)
         self.current = None
+        self.ctrl_pressed = False
+        self.nearShape = None
         self.drawingPolygon.emit(False)
         self.update()
 
@@ -631,6 +720,8 @@ class Canvas(QWidget):
         self.shape_type = shapes[0].get_shape_type()
         print self.shape_type
         self.current = None
+        self.nearShape = None
+        self.ctrl_pressed = False
         self.repaint()
 
     def setShapeVisible(self, shape, value):

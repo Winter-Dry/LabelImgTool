@@ -251,6 +251,8 @@ class MainWindow(QMainWindow, WindowMixin):
         self.canvas.scrollRequest.connect(self.scrollRequest)
 
         self.canvas.newShape.connect(self.newShape)
+        self.canvas.createPolygon.connect(self.createPolygon)
+        self.canvas.remove.connect(self.remove)
         self.canvas.shapeMoved.connect(self.setDirty)
         self.canvas.selectionChanged.connect(self.shapeSelectionChanged)
         self.canvas.drawingPolygon.connect(self.toggleDrawingSensitive)
@@ -1005,7 +1007,6 @@ class MainWindow(QMainWindow, WindowMixin):
         self.actions.edit.setEnabled(selected)
         self.actions.shapeLineColor.setEnabled(selected)
         self.actions.shapeFillColor.setEnabled(selected)
-        print 'shapeSelectionChanged'
 
     def addLabel(self, shape):
         item = QListWidgetItem(shape.label)
@@ -1166,24 +1167,26 @@ class MainWindow(QMainWindow, WindowMixin):
             self.canvas.setShapeVisible(shape, item.checkState() == Qt.Checked)
 
     # Callback functions:
-    def newShape(self):
+    def newShape(self, text):
         """Pop-up and give focus to the label editor.
 
         position MUST be in global coordinates.
         """
-        if self.label_sub_dic:
-            self.labelDialog = LabelDialog(
-                parent=self,
-                sub_label_items=self.label_sub_dic,
-                label_fre_dic=self.label_fre_dic)
-        elif len(self.labelHist) > 0:
-            self.labelDialog = LabelDialog(
-                parent=self,
-                listItem=self.labelHist,
-                label_fre_dic=self.label_fre_dic)
+        if text == '':
+            if self.label_sub_dic:
+                self.labelDialog = LabelDialog(
+                    parent=self,
+                    sub_label_items=self.label_sub_dic,
+                    label_fre_dic=self.label_fre_dic)
+            elif len(self.labelHist) > 0:
+                self.labelDialog = LabelDialog(
+                    parent=self,
+                    listItem=self.labelHist,
+                    label_fre_dic=self.label_fre_dic)
 
-        text = self.labelDialog.popUp()
-        text = str(text)
+            text = self.labelDialog.popUp()
+            text = str(text)
+
         if text is not None:
 
             if str(text) in self.label_fre_dic:
@@ -1193,7 +1196,7 @@ class MainWindow(QMainWindow, WindowMixin):
             new_shape = self.canvas.setLastLabel(text)
             if self.enable_color_map:
                 fill_color = self.label_color_map[
-                    self.label_num_dic[text]]
+                    self.label_num_dic[str(text)]]
                 new_shape.fill_color = QColor(fill_color[0],fill_color[1],fill_color[2],fill_color[3])
             if self.enable_instance_seg:
                 yes, no = QMessageBox.Yes, QMessageBox.No
@@ -1724,6 +1727,13 @@ class MainWindow(QMainWindow, WindowMixin):
             if self.noShapes():
                 for action in self.actions.onShapesPresent:
                     action.setEnabled(False)
+
+    def remove(self):
+        self.remLabel(shape=self.canvas.rmShape,label=self.canvas.rmShape.label)
+        self.setDirty()
+        if self.noShapes():
+            for action in self.actions.onShapesPresent:
+                action.setEnabled(False)
 
     def chshapeLineColor(self):
         color = self.colorDialog.getColor(self.lineColor, u'Choose line color',

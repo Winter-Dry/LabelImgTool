@@ -157,7 +157,7 @@ class Shape(object):
     def nearestVertex(self, point, epsilon):
         for i, p in enumerate(self.points):
             if distance(p - point) <= epsilon:
-                return i
+                return i, p
         return None
 
     def containsPoint(self, point):
@@ -200,8 +200,8 @@ class Shape(object):
     def divide(self, points):
         s1 = self.copy()
         s2 = self.copy()
-        start = self.points.find(points[0])
-        end = self.points.find(points[-1])
+        start = self.points.index(points[0])
+        end = self.points.index(points[-1])
         if start < end:
             s1.points = points + self.points[end-1:start:-1]
             s2.points = points + self.points[end+1:] + self.points[:start]
