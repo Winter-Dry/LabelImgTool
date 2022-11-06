@@ -11,6 +11,8 @@ import time
 from collections import defaultdict
 from functools import partial
 
+import PyQt5.QtCore
+import numpy as np
 import qdarkstyle
 import requests
 
@@ -21,6 +23,7 @@ try:
 except ImportError:
     if sys.version_info.major >= 3:
         import sip
+
         sip.setapi('QVariant', 2)
     from PyQt4.QtCore import *
     from PyQt4.QtGui import *
@@ -41,7 +44,11 @@ from libs.zoomWidget import ZoomWidget
 from libs.ImageManagement import loadImageThread, loadOnlineImgMul
 from libs.settingDialog import SettingDialog
 from libs.saveMaskImage import label_mask_writer
+
+from libs.ocr import Ocr
 import resources
+
+from PIL import Image
 
 __appname__ = 'labelImgTool'
 
@@ -74,6 +81,7 @@ class WindowMixin(object):
         self.addToolBar(Qt.LeftToolBarArea, toolbar)
         return toolbar
 
+
 class HashableQListWidgetItem(QListWidgetItem):
 
     def __init__(self, *args):
@@ -81,6 +89,7 @@ class HashableQListWidgetItem(QListWidgetItem):
 
     def __hash__(self):
         return hash(id(self))
+
 
 class MainWindow(QMainWindow, WindowMixin):
     FIT_WINDOW, FIT_WIDTH, MANUAL_ZOOM = range(3)
@@ -94,10 +103,20 @@ class MainWindow(QMainWindow, WindowMixin):
 
         # shape type
         self.shape_type = 'RECT'
+
+        # paper detiles
+        self.papertitle = None
+        self.authors = []
+        self.page_num = None
+
+        # ocr config
+        self.defaultOcrConfig = './data/ocr_config.json'
+        self.ocr = Ocr(self.defaultOcrConfig)
+
         # info display
         self.display_timer = QTimer()
         self.display_timer.start(1000)
-        #QObject.connect(
+        # QObject.connect(
         #    self.display_timer,
         #    SIGNAL("timeout()"),
         #    self.info_display)
@@ -1022,7 +1041,7 @@ class MainWindow(QMainWindow, WindowMixin):
         else:
             shape = self.canvas.selectedShape
             if shape:
-                #self.labelList.setSelected(self.shapesToItems[shape], True)
+                # self.labelList.setSelected(self.shapesToItems[shape], True)
                 self.shapesToItems[shape].setSelected(True)
             else:
                 self.labelList.clearSelection()
@@ -1093,7 +1112,10 @@ class MainWindow(QMainWindow, WindowMixin):
             if isinstance(s.fill_color, list):
                 s.fill_color = QColor(s.fill_color[0], s.fill_color[1], s.fill_color[2], s.fill_color[3])
             return dict(
-                label= s.label,
+                label=s.label,
+                papertitle=self.papertitle,
+                authors=self.authors,
+                page=self.page_num,
                 instance_id=s.instance_id,
                 line_color=s.line_color.getRgb() if s.line_color != self.lineColor else None,
                 fill_color=s.fill_color.getRgb() if s.fill_color != self.fillColor else None,
@@ -1123,12 +1145,15 @@ class MainWindow(QMainWindow, WindowMixin):
         if self.task_mode in [0, 1]:  # seg and det mode
             try:
                 if self.usingPascalVocFormat is True:
+                    if self.defaultSaveDir is None:
+                        self.defaultSaveDir = os.path.dirname(filename)
 
                     savefilename = os.path.join(self.defaultSaveDir, os.path.splitext(imgFileName)[
                         0] + '.xml')  # the mask image will be save as file_mask.jpg etc.
                     print('savePascalVocFommat save to:' + savefilename)
                     lf.savePascalVocFormat(
-                        savefilename, self.image_size, shapes, self.filename, shape_type_=self.shape_type)
+                        savefilename, self.image_size, shapes, self.filename, shape_type_=self.shape_type,
+                        paperTitle=self.papertitle, paperAuthors=self.authors, paperPageNum=self.page_num)
                     self.process_image_num += 1
                 else:
                     lf.save(
@@ -1204,7 +1229,35 @@ class MainWindow(QMainWindow, WindowMixin):
 
         text = self.labelDialog.popUp()
         text = str(text)
-        if text is not None and text is not 'None':
+
+        #####
+        if text == 'Identify the title' or text == 'Identify the author':
+            tmp_points = [(int(x.x()), int(x.y())) for x in self.canvas.shapes[-1].points]
+            img = np.array(Image.fromqpixmap(self.canvas.bg_image))
+            img_select = img[tmp_points[0][1]:tmp_points[2][1], tmp_points[0][0]:tmp_points[2][0]]
+            Image.fromarray(img_select).save('./tmp.jpg')
+            words_ocr = self.ocr.get('./tmp.jpg')
+            os.remove('./tmp.jpg')
+            # correct one by one
+            # words = []
+            # for w in words_ocr:
+            #     words_fix, ok = QInputDialog.getMultiLineText(self, '请核对内容', '请核对\n' + text.split(' ')[-1], w['words'])
+            #     words.append(words_fix)
+            words_list = [w['words'] for w in words_ocr]
+            words, ok = QInputDialog.getMultiLineText(self, '请核对内容', '请核对 ' + text.split(' ')[-1],
+                                                      str(words_list))
+            if words is None:
+                words = words_list
+            if text == 'Identify the title':
+                self.papertitle = words
+            elif text == 'Identify the author':
+                self.authors = words
+            self.canvas.ocr_finish()
+            self.actions.createRect.setEnabled(True)
+
+
+        #####
+        elif text is not None and text is not 'None':
 
             if str(text) in self.label_fre_dic:
                 self.label_fre_dic[str(text)] += 1
@@ -1308,7 +1361,8 @@ class MainWindow(QMainWindow, WindowMixin):
             index = self.mImgList.index(filename)
             fileWidgetItem = self.fileListWidget.item(index)
             fileWidgetItem.setSelected(True)
-            #self.fileListWidget.setSelected(fileWidgetItem, True)
+            # self.fileListWidget.setSelected(fileWidgetItem, True)
+
         if QFile.exists(filename):
             if LabelFile.isLabelFile(filename):
                 try:
@@ -1420,7 +1474,7 @@ class MainWindow(QMainWindow, WindowMixin):
         settings = self.app_settings
         # If it loads images from dir, don't load it at the begining
         if self.dirname is None:
-            settings[SETTING_FILENAME] = self.filePath if self.filePath else ''
+            settings[SETTING_FILENAME] = ''  # self.filePath if self.filePath else ''
         else:
             settings[SETTING_FILENAME] = ''
 
@@ -1537,7 +1591,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         self.dirname = dirpath
         if '/' in dirpath:
-            path_elem = dirpath.split('/')[:-2]
+            path_elem = dirpath.split('/')[:-1]  # -2
             last_path_elem = dirpath.split('/')[-1]
             s = '/'
             self.defaultSaveDir = s.join(
@@ -1627,9 +1681,15 @@ class MainWindow(QMainWindow, WindowMixin):
                 self, '%s - Choose Image or Label file' %
                       __appname__, path, filters))
         if filename:
+            if isinstance(filename, tuple):
+                filename = filename[0]
             self.loadFile(filename)
 
     def saveFile(self, _value=False):
+        ### input page number ###
+        page, ok = QInputDialog.getInt(self, '请输入页码', '当前页码', int(self.page_num) if self.page_num else 0, min=0)
+        self.page_num = str(page)
+        ####
         assert not self.image.isNull(), "cannot save empty image"
         if self.hasLabels():
             if self.defaultSaveDir is not None and len(
@@ -1666,7 +1726,7 @@ class MainWindow(QMainWindow, WindowMixin):
         dlg = QFileDialog(self, caption, openDialogPath, filters)
         dlg.setDefaultSuffix(LabelFile.suffix[1:])
         dlg.setAcceptMode(QFileDialog.AcceptSave)
-        dlg.setConfirmOverwrite(True)
+        # dlg.setConfirmOverwrite(True)
         filenameWithoutExtension = os.path.splitext(self.filename)[0]
         dlg.selectFile(filenameWithoutExtension)
         dlg.setOption(QFileDialog.DontUseNativeDialog, False)
@@ -1921,7 +1981,7 @@ def read(filename, default=None):
 def main(argv):
     """Standard boilerplate Qt application code."""
     app = QApplication(argv)
-    #app.setStyleSheet(qdarkstyle.load_stylesheet(pyside=False))
+    # app.setStyleSheet(qdarkstyle.load_stylesheet(pyside=False))
     app.setApplicationName(__appname__)
     app.setWindowIcon(newIcon("app"))
     win = MainWindow(argv[1] if len(argv) == 2 else None)

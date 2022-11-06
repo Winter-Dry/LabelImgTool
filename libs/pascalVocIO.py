@@ -5,6 +5,7 @@ from xml.dom import minidom
 from lxml import etree
 from .ustr import ustr
 
+
 class PascalVocWriter:
 
     def __init__(
@@ -14,7 +15,10 @@ class PascalVocWriter:
             imgSize,
             databaseSrc='Unknown',
             localImgPath=None,
-            shape_type=None):
+            shape_type=None,
+            paperTitle=None,
+            paperAuthors=[],
+            paperPageNum=None):
         self.foldername = foldername
         self.filename = filename
         self.databaseSrc = databaseSrc
@@ -22,6 +26,9 @@ class PascalVocWriter:
         self.boxlist = []
         self.localImgPath = localImgPath
         self.shape_type = shape_type
+        self.paperTitle = paperTitle
+        self.paperAuthors = paperAuthors
+        self.paperPageNum = paperPageNum
 
     def prettify(self, elem):
         """
@@ -29,7 +36,7 @@ class PascalVocWriter:
         """
         rough_string = ElementTree.tostring(elem, 'utf8')
         root = etree.fromstring(rough_string)
-        return etree.tostring(root,pretty_print=True, encoding="unicode")
+        return etree.tostring(root, pretty_print=True, encoding="unicode")
 
     def genXML(self):
         """
@@ -56,6 +63,14 @@ class PascalVocWriter:
         localImgPath = SubElement(top, 'path')
         self.localImgPath = self.localImgPath.split('/')[-1]
         localImgPath.text = self.localImgPath
+
+        paperDetail = SubElement(top, 'paper_detail')
+        paperTitle = SubElement(paperDetail, 'title')
+        paperTitle.text = self.paperTitle
+        paperAuthors = SubElement(paperDetail, 'authors')
+        paperAuthors.text = self.paperAuthors
+        paperPageNum = SubElement(paperDetail, 'page')
+        paperPageNum.text = self.paperPageNum
 
         source = SubElement(top, 'source')
         database = SubElement(source, 'database')
@@ -84,7 +99,7 @@ class PascalVocWriter:
         bndbox['name'] = name
         self.boxlist.append(bndbox)
 
-    def addPolygon(self, shape, name,instance_id):
+    def addPolygon(self, shape, name, instance_id):
         polygon = {}
         i = 0
         for point in shape:
@@ -105,7 +120,7 @@ class PascalVocWriter:
             pose = SubElement(object_item, 'pose')
             pose.text = "Unspecified"
             if 'instance_id' in each_object.keys():
-                instance_id = SubElement(object_item,'instance_id')
+                instance_id = SubElement(object_item, 'instance_id')
                 instance_id.text = str(each_object['instance_id'])
             truncated = SubElement(object_item, 'truncated')
             truncated.text = "0"
@@ -159,24 +174,26 @@ class PascalVocReader:
     def getShapeType(self):
         return self.shape_type
 
-    def addPolygonShape(self,label,points,instance_id = 0):
-        points = [(point[0],point[1]) for point in points]
-        self.shapes.append((label,points,None,None,1,instance_id))
+    def addPolygonShape(self, label, points, instance_id=0):
+        points = [(point[0], point[1]) for point in points]
+        self.shapes.append((label, points, None, None, 1, instance_id))
+
     def get_img_size(self):
         if self.image_size:
             return self.image_size
-    def addShape(self, label, rect,instance_id = 0):
+
+    def addShape(self, label, rect, instance_id=0):
         xmin = rect[0]
         ymin = rect[1]
         xmax = rect[2]
         ymax = rect[3]
         points = [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)]
-        self.shapes.append((label, points, None, None, 0,instance_id))
+        self.shapes.append((label, points, None, None, 0, instance_id))
 
     def parseXML(self):
         assert self.filepath.endswith('.xml'), "Unsupport file format"
         parser = etree.XMLParser(encoding='utf-8')
-        xmltree = ElementTree.parse(self.filepath,parser=parser).getroot()
+        xmltree = ElementTree.parse(self.filepath, parser=parser).getroot()
         filename = xmltree.find('filename').text
         if xmltree.find('shape_type') is not None:
             self.shape_type = xmltree.find('shape_type').text
@@ -204,7 +221,7 @@ class PascalVocReader:
                     points.append(point)
                 if object_iter.find('instance_id') is not None:
                     instance_id = int(object_iter.find('instance_id').text)
-                self.addPolygonShape(label, points,instance_id)
+                self.addPolygonShape(label, points, instance_id)
         else:
             print('unsupportable shape type')
 

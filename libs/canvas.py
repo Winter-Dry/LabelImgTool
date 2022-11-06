@@ -619,6 +619,16 @@ class Canvas(QWidget):
         self.line.points = [self.current[-1], self.current[0]]
         self.drawingPolygon.emit(True)
 
+    def ocr_finish(self):
+        assert self.shapes
+        self.current = self.shapes.pop()
+        self.current.setOpen()
+        self.line.points = [self.current[-1], self.current[0]]
+        self.drawingPolygon.emit(True)
+        self.current = None
+        self.drawingPolygon.emit(False)
+        self.update()
+
     def resetAllLines(self):
         assert self.shapes
         self.current = self.shapes.pop()

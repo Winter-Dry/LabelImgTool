@@ -26,19 +26,25 @@ class LabelFile(object):
             shapes,
             imagePath=None,
             databaseSrc=None,
-            shape_type_='RECT'):
+            shape_type_='RECT',
+            paperTitle=None,
+            paperAuthors=[],
+            paperPageNum=None):
         imgFolderPath = os.path.dirname(imagePath)
         imgFolderName = os.path.split(imgFolderPath)[-1]
         imgFileName = os.path.basename(imagePath)
         imgFileNameWithoutExt = os.path.splitext(imgFileName)[0]
 
-        #img = cv2.imread(imagePath)
+        # img = cv2.imread(imagePath)
         writer = PascalVocWriter(
             imgFolderName,
             imgFileNameWithoutExt,
             image_size,
             localImgPath=imagePath,
-            shape_type=shape_type_)
+            shape_type=shape_type_,
+            paperTitle=paperTitle,
+            paperAuthors=paperAuthors,
+            paperPageNum=paperPageNum)
         bSave = False
         for shape in shapes:
             points = shape['points']
@@ -54,7 +60,7 @@ class LabelFile(object):
                     label)
             if shape['shape_type'] == 1:
                 print('add polygons')
-                writer.addPolygon(points, label,instance_id=shape['instance_id'])
+                writer.addPolygon(points, label, instance_id=shape['instance_id'])
 
             bSave = True
 

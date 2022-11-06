@@ -37,9 +37,14 @@ class Shape(object):
     scale = 1.0
     label_font_size = 10
 
-    def __init__(self, label=None, shape_type=0, line_color=None,instance_id = 0):
+    def __init__(self, label=None, shape_type=0, line_color=None, instance_id=0):
         self.label = label
         self.instance_id = instance_id
+        ###### paper detiles #######
+        self.authors = []
+        self.paper_title = None
+        self.page_num = None
+        ############################
         self.points = []
         self.fill = False
         self.selected = False
@@ -66,8 +71,9 @@ class Shape(object):
     def set_shape_type(self, type):
         self.shape_type = type
 
-    def set_instance_id(self,id):
+    def set_instance_id(self, id):
         self.instance_id = id
+
     def get_shape_type(self):
         return self.shape_type
 
@@ -130,13 +136,14 @@ class Shape(object):
         painter.fillPath(vrtx_path, self.vertex_fill_color)
         if self.fill:
             color = self.select_fill_color if self.selected else self.fill_color
-            if isinstance(color,list):
-                color=QColor(*color)
+            if isinstance(color, list):
+                color = QColor(*color)
             painter.fillPath(line_path, color)
         if self.label is not None and self.shape_type == self.RECT_SHAPE:
-            #painter.setBrush(QColor(255,255,255))
-            top_left_point = QPointF(self.points[0].x(),self.points[0].y()-int(self.__class__.label_font_size*1.15))
-            label_bg = QRectF(top_left_point,self.points[3])
+            # painter.setBrush(QColor(255,255,255))
+            top_left_point = QPointF(self.points[0].x(),
+                                     self.points[0].y() - int(self.__class__.label_font_size * 1.15))
+            label_bg = QRectF(top_left_point, self.points[3])
             painter.drawRect(label_bg)
             painter.drawText(self.points[0], self.label)
 

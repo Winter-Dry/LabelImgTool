@@ -4,7 +4,7 @@ import os
 class APPSettings(object):
     def __init__(self):
         self.data = {}
-        self.path = '.settings.pkl'
+        self.path = '../settings.pkl'
 
     def __setitem__(self, key, value):
         self.data[key] = value
